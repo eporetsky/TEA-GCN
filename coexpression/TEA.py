@@ -76,15 +76,32 @@ def array_mapper(ref_array ,  pertrubed_array_1, pertrubed_array_2):
     mapping_array_2 = np.array(mapping_array_2)
     return mapping_array_1,  mapping_array_2, unique_values_1, unique_values_2
 
-def calc_untargeted(k, PCC_genes, SCC_genes, bicor_genes, PCC_nominators_dict, PCC_denominators_dict,SCC_nominators_dict , SCC_denominators_dict,bicor_norm_weights_dict, aggregation_method, network_path, workers= 2):
-    threads = workers
-    SCC_mapping_array , bicor_mapping_array ,SCC_mapping_dict  , bicor_mapping_dict= array_mapper(PCC_genes, SCC_genes, bicor_genes)
-    for gene_idx, gene in enumerate(PCC_genes):
-        if True:
-            print(gene_idx)
-            result=calc_job(k, aggregation_method, PCC_genes,SCC_mapping_array,  bicor_mapping_array , SCC_mapping_dict, bicor_mapping_dict, network_path, gene_idx, gene, PCC_nominators_dict, PCC_denominators_dict,SCC_nominators_dict , SCC_denominators_dict,bicor_norm_weights_dict, threads ,full=False)
-            print(result)
+# Instead of parallelizing over einsumt, parallelize over genes
+# einsumt now takes 1 worker and multiprocessing.Pool takes workers param
 
+from multiprocessing import Pool
+# Define the worker function at the top level. 
+def worker(args):
+    (k, aggregation_method, PCC_genes, SCC_mapping_array, bicor_mapping_array, SCC_mapping_dict, bicor_mapping_dict, network_path, gene_idx, gene, PCC_nominators_dict, PCC_denominators_dict, SCC_nominators_dict, SCC_denominators_dict, bicor_norm_weights_dict) = args
+    result = calc_job(k, aggregation_method, PCC_genes, SCC_mapping_array, bicor_mapping_array, SCC_mapping_dict, bicor_mapping_dict, network_path, gene_idx, gene, PCC_nominators_dict, PCC_denominators_dict, SCC_nominators_dict, SCC_denominators_dict, bicor_norm_weights_dict, 1, False)
+    return result
+
+# 
+def calc_untargeted(k, PCC_genes, SCC_genes, bicor_genes, PCC_nominators_dict, PCC_denominators_dict, SCC_nominators_dict, SCC_denominators_dict, bicor_norm_weights_dict, aggregation_method, network_path, workers=4):
+    SCC_mapping_array, bicor_mapping_array, SCC_mapping_dict, bicor_mapping_dict = array_mapper(PCC_genes, SCC_genes, bicor_genes)
+    # Prepare arguments for each worker
+    args_list = [
+        (k, aggregation_method, PCC_genes, SCC_mapping_array, bicor_mapping_array, SCC_mapping_dict, bicor_mapping_dict, network_path, gene_idx, PCC_genes[gene_idx], PCC_nominators_dict, PCC_denominators_dict, SCC_nominators_dict, SCC_denominators_dict, bicor_norm_weights_dict)
+        for gene_idx in range(len(PCC_genes))
+    ]
+
+    # Create a Pool with the specified number of workers
+    with Pool(processes=workers) as pool:
+        # Map the worker function to the list of arguments
+        results = pool.map(worker, args_list)
+    # Print results
+    for result in results:
+        print(result)
 
 def build_ensemble_GCN( Tid2Gid_dict, k_cluster_assignment_dict, expmat_path, k, network_path, aggregation_method, delim, workers):
     PCC_genes, PCC_gene_dict,SCC_genes, SCC_gene_dict, bicor_genes, bicor_gene_dict , PCC_nominators_dict, PCC_denominators_dict, SCC_nominators_dict, SCC_denominators_dict, bicor_norm_weights_dict = precalc(expmat_path, Tid2Gid_dict, k_cluster_assignment_dict, k, delimiter=delim, workers=workers)
